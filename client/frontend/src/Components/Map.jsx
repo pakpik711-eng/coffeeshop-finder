@@ -1,112 +1,111 @@
-import React, {useEffect,useRef} from 'react'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
+import React, { useEffect, useRef } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-const API_KEY=import.meta.env.VITE_FOURSQUARE_API_KEY;
+import coffee from "../../public/coffee.png";
 
-async function getNearbyCoffeeShops(latitude,longitude){
-
-  const response=await fetch(`https://api.foursquare.com/v3/places/search?query=coffee&ll=${latitude},${longitude}&radius=1500&limit=8`,{
-    headers:{
-      Accept:'application/json',
-      Authorization:API_KEY
-    }
-  }
-  )
-const data=await response.json();
-console.log(data.results);
-return data.results;
-
-
-}
-
-async function getShopImage(placeId) {
-  const response = await fetch(`https://api.foursquare.com/v3/places/${placeId}/photos?limit=1`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: API_KEY
-    }
-  });
-  const data = await response.json();
-  if (data.length > 0) {
-    const photos = data;
-    return `${photos[0].prefix}300x300${photos[0].suffix}`
-  } else {
-    return null;
-  }
-}
-
+const coffeeIcon = L.icon({
+  iconUrl: coffee,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
 
 
 const Map = () => {
+  const mapContainer = useRef(null);
+  const mapInstance = useRef(null);
+  const userMarker = useRef(null);
+  const cafeMarkers = useRef([]);
 
-    const mapContainer=useRef(null);
-    const mapInstance=useRef(null);
-    const userMarker=useRef(null);
-    useEffect(()=>{
-          if (mapInstance.current) return 
+  useEffect(() => {
+    if (mapInstance.current) return;
 
-      mapInstance.current= L.map(mapContainer.current).setView([51.505, -0.09], 13);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-}).addTo(mapInstance.current);
-          
- navigator.geolocation.getCurrentPosition(async(position)=>{
+    mapInstance.current = L.map(mapContainer.current).setView([0, 0], 13);
 
-  const {latitude,longitude}=position.coords;
-    console.log("Latitude:",latitude);
-    console.log("longitude:",longitude);
-    
-    if(userMarker.current){
-        userMarker.current.remove();
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(mapInstance.current);
+
+    getUserLocation();
+
+    return () => {
+      mapInstance.current.remove();
+      mapInstance.current = null;
+    };
+  }, []);
+
+  const getUserLocation = () => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+
+        // Remove old marker
+        if (userMarker.current) {
+          userMarker.current.remove();
+        }
+
+        userMarker.current = L.marker([latitude, longitude])
+          .addTo(mapInstance.current)
+          .bindPopup("You are here")
+          .openPopup();
+
+        mapInstance.current.setView([latitude, longitude], 14);
+
+        fetchNearbyCafes(latitude, longitude);
+      },
+      (error) => {
+        console.error("Location error:", error);
+      }
+    );
+  };
+
+  const fetchNearbyCafes = async (lat, lon) => {
+    // Clear old cafe markers
+    cafeMarkers.current.forEach((marker) => marker.remove());
+    cafeMarkers.current = [];
+
+    const query = `
+      [out:json];
+      node
+        ["amenity"="cafe"]
+        (around:1000, ${lat}, ${lon});
+      out;
+    `;
+
+    const url = "https://overpass-api.de/api/interpreter";
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        body: query,
+      });
+
+      const data = await response.json();
+
+      data.elements.forEach((place) => {
+        const name = place.tags?.name || "Coffee Shop";
+
+        const marker = L.marker([place.lat, place.lon], { icon: coffeeIcon })
+          .addTo(mapInstance.current) 
+          .bindPopup(`
+            ☕ <b>${name}</b><br/>
+            ${place.tags?.addr_street || ""}
+          `);
+
+        cafeMarkers.current.push(marker);
+      });
+    } catch (err) {
+      console.error("Overpass error:", err);
     }
-userMarker.current=L.marker([latitude,longitude]).
-    addTo(mapInstance.current).
-    bindPopup("You are here")   
-    .openPopup();
-    mapInstance.current.setView([latitude,longitude],13);
+  };
 
-const shops=await getNearbyCoffeeShops(latitude,longitude);
-  shops.forEach(async(shop)=>{
-    const shopLat=shop.geocodes.main.latitude;
-    const shopLng=shop.geocodes.main.longitude;
-    const placeId=shop.fsq_id;
-    const imageUrl=await getShopImage(placeId);
-
-  L.marker([shopLat,shopLng])
-  .addTo(mapInstance.current)
-  .bindPopup(`
-    <div style="width:200px">
-    <b>${shop.name}</b><br/>
-    ${shop.location.formatted_address || ""}<br/>
-     Distance: ${shop.distance} m<br/>
-     ${
-      imageUrl?<img src="${imageUrl}"  width="180" 
-                             style="margin-top:6px;border-radius:8px"/>
-                             :"No Image Available"
-
-     }
-    </div>
-    `)
-
-    },(error)=>{
-        console.error("Error getting location:",error);
-    })
-
-
-  
-
-
- return () => {
-      mapInstance.current?.remove()
-      mapInstance.current = null
-    }
-    },[])
   return (
-   <div id="map" ref={mapContainer}  ></div>
-
-  )
-}
+    <div
+      ref={mapContainer}
+      style={{ height: "100vh", width: "100%" }}
+    ></div>
+  );
+};
 
 export default Map;
