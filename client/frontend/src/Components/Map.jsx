@@ -3,6 +3,10 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import coffee from "../../public/coffee.png";
+import "leaflet-routing-machine"
+import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
+
+
 
 const coffeeIcon = L.icon({
   iconUrl: coffee,
@@ -17,6 +21,12 @@ const Map = () => {
   const mapInstance = useRef(null);
   const userMarker = useRef(null);
   const cafeMarkers = useRef([]);
+
+  const userLocation=useRef(null);
+  const routeControl=useRef(null);
+
+
+
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -40,7 +50,7 @@ const Map = () => {
       (position) => {
         const { latitude, longitude } = position.coords;
 
-        // Remove old marker
+       
         if (userMarker.current) {
           userMarker.current.remove();
         }
@@ -53,6 +63,9 @@ const Map = () => {
         mapInstance.current.setView([latitude, longitude], 14);
 
         fetchNearbyCafes(latitude, longitude);
+        userLocation.current = [latitude, longitude];
+
+        
       },
       (error) => {
         console.error("Location error:", error);
@@ -61,7 +74,7 @@ const Map = () => {
   };
 
   const fetchNearbyCafes = async (lat, lon) => {
-    // Clear old cafe markers
+   
     cafeMarkers.current.forEach((marker) => marker.remove());
     cafeMarkers.current = [];
 
@@ -76,12 +89,37 @@ const Map = () => {
     const url = "https://overpass-api.de/api/interpreter";
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(url, { 
         method: "POST",
         body: query,
       });
 
       const data = await response.json();
+
+     //direction-feature
+      const showRoute =(shopLat, shopLon)=>{
+        if(!userLocation.current) return;
+
+        if(routeControl.current){
+          mapInstance.current.removeControl(routeControl.current);
+        }
+     
+        routeControl.current = L.Routing.control({
+waypoints: [
+      L.latLng(userLocation.current[0], userLocation.current[1]),
+      L.latLng(shopLat, shopLon),
+    ],
+    routeWhileDragging: false,
+    addWaypoints: false,
+    show: false,
+    lineOptions: {
+      styles: [{ color: "#F54927", weight: 5 }],
+    },
+        }).addTo(mapInstance.current);
+
+
+
+      }
 
       data.elements.forEach((place) => {
         const name = place.tags?.name || "Coffee Shop";
@@ -90,9 +128,12 @@ const Map = () => {
           .addTo(mapInstance.current) 
           .bindPopup(`
             ☕ <b>${name}</b><br/>
-            ${place.tags?.addr_street || ""}
+            ${place.tags?.addr_street || ""}<br/>
+              Click marker for directions
           `);
-
+          marker.on('click',()=>{
+            showRoute(place.lat, place.lon);
+          })
         cafeMarkers.current.push(marker);
       });
     } catch (err) {
