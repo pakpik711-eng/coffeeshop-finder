@@ -111,7 +111,8 @@ waypoints: [
     ],
     routeWhileDragging: false,
     addWaypoints: false,
-    show: false,
+    show: true,
+    collapsible: true,
     lineOptions: {
       styles: [{ color: "#F54927", weight: 5 }],
     },
@@ -124,10 +125,18 @@ waypoints: [
       data.elements.forEach((place) => {
         const name = place.tags?.name || "Coffee Shop";
 
+      //distance calculation
+      const distance =mapInstance.current.distance(
+      L.latLng(lat, lon),
+      L.latLng(place.lat, place.lon)
+      )
+       const distanceInKm =(distance/1000).toFixed(2);
+
         const marker = L.marker([place.lat, place.lon], { icon: coffeeIcon })
           .addTo(mapInstance.current) 
           .bindPopup(`
             ☕ <b>${name}</b><br/>
+            Distance: ${distanceInKm} km<br/>
             ${place.tags?.addr_street || ""}<br/>
               Click marker for directions
           `);
